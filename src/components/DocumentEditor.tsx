@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { RichTextEditor } from "./RichTextEditor";
 import { ConfirmModal } from "./ConfirmModal";
+import { Spinner } from "./Spinner";
 import type {
   AccessRole,
   DocumentDetail,
@@ -37,24 +37,29 @@ export function DocumentEditor({
   const [busyAction, setBusyAction] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<"share" | "versions" | "files">("share");
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [navigatingHome, setNavigatingHome] = useState(false);
 
   const dirty = useMemo(
     () => title !== document.title || content !== document.content,
     [title, content, document.title, document.content]
   );
 
+  const isSaving = status === "saving";
+
   useEffect(() => {
-    if (!canEdit || !dirty) return;
+    if (!canEdit || !dirty || isSaving) return;
     const timer = setTimeout(() => {
       void save({ silent: true });
     }, 1200);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, content, canEdit, dirty]);
+  }, [title, content, canEdit, dirty, isSaving]);
 
   async function save(options?: { silent?: boolean; createVersion?: boolean }) {
-    if (!canEdit) return;
+    if (!canEdit || isSaving) return;
     setStatus("saving");
+    if (options?.createVersion) setSavingVersion(true);
     if (!options?.silent) setMessage(null);
 
     try {
@@ -73,12 +78,34 @@ export function DocumentEditor({
       setTitle(data.document.title);
       setContent(data.document.content);
       setStatus("saved");
-      if (!options?.silent) setMessage("Saved.");
+      if (!options?.silent) {
+        setMessage(options?.createVersion ? "Version saved." : "Document saved.");
+      }
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSavingVersion(false);
     }
   }
+
+  function statusLabel() {
+    if (!canEdit) return "Read only";
+    if (isSaving && savingVersion) return "Saving version...";
+    if (isSaving) return "Saving...";
+    if (status === "error") return "Save failed";
+    if (dirty) return "Unsaved changes";
+    if (status === "saved") return "All changes saved";
+    return "Up to date";
+  }
+
+  function statusClass() {
+    if (status === "error") return "bg-red-50 text-[var(--danger)] border-red-200";
+    if (isSaving) return "bg-[#e8f5f3] text-[var(--accent-strong)] border-[#b7e0da]";
+    if (dirty) return "bg-amber-50 text-[var(--warn)] border-amber-200";
+    return "bg-[#e8f5f3] text-[var(--accent-strong)] border-[#b7e0da]";
+  }
+
 
   async function shareDocument() {
     setBusyAction(true);
@@ -162,6 +189,7 @@ export function DocumentEditor({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Delete failed");
       setDeleteOpen(false);
+      setNavigatingHome(true);
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
@@ -170,6 +198,12 @@ export function DocumentEditor({
       setDeleteOpen(false);
     }
   }
+
+  function goHome() {
+    setNavigatingHome(true);
+    router.push("/dashboard");
+  }
+
 
   const sharePanel = (
     <div className="panel p-4 sm:p-5">
@@ -233,9 +267,15 @@ export function DocumentEditor({
           <button
             className="btn btn-primary w-full"
             onClick={() => void shareDocument()}
-            disabled={busyAction}
+            disabled={busyAction || isSaving}
           >
-            Share document
+            {busyAction ? (
+              <>
+                <Spinner /> Sharing...
+              </>
+            ) : (
+              "Share document"
+            )}
           </button>
         </div>
       )}
@@ -258,15 +298,15 @@ export function DocumentEditor({
             <p className="text-xs text-[var(--ink-soft)]">
               {new Date(version.createdAt).toLocaleString()} · {version.createdBy.name}
             </p>
-            {canEdit && (
-              <button
-                className="mt-1 text-xs font-medium text-[var(--accent-strong)]"
-                onClick={() => void restoreVersion(version.id)}
-                disabled={busyAction}
-              >
-                Restore
-              </button>
-            )}
+                {canEdit && (
+                  <button
+                    className="mt-1 text-xs font-medium text-[var(--accent-strong)] disabled:opacity-50"
+                    onClick={() => void restoreVersion(version.id)}
+                    disabled={busyAction || isSaving}
+                  >
+                    {busyAction ? "Restoring..." : "Restore"}
+                  </button>
+                )}
           </li>
         ))}
       </ul>
@@ -289,24 +329,40 @@ export function DocumentEditor({
 
   return (
     <>
+      {(busyAction || navigatingHome) && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(20,33,61,0.22)] px-4 backdrop-blur-[1px]">
+          <div className="flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-white px-5 py-4 shadow-xl">
+            <Spinner className="h-5 w-5 text-[var(--accent)]" />
+            <p className="text-sm font-medium">
+              {navigatingHome
+                ? "Returning to documents..."
+                : busyAction
+                  ? "Working..."
+                  : "Please wait..."}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto grid max-w-6xl gap-4 px-3 py-4 sm:gap-5 sm:px-4 sm:py-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-6">
         <section className="panel overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-[var(--line)] px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-4">
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-              <Link
-                href="/dashboard"
+              <button
+                type="button"
+                onClick={goHome}
                 className="text-sm text-[var(--ink-soft)] hover:text-[var(--ink)] hover:underline"
               >
                 ← Docs
-              </Link>
+              </button>
               <span className="badge bg-[#e8f5f3] text-[var(--accent-strong)] capitalize">
                 {access}
               </span>
-              <span className="text-xs text-[var(--ink-soft)]">
-                {status === "saving" && "Saving..."}
-                {status === "saved" && !dirty && "Saved"}
-                {dirty && status !== "saving" && "Unsaved changes"}
-                {!canEdit && "Read only"}
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass()}`}
+              >
+                {isSaving && <Spinner className="h-3 w-3" />}
+                {statusLabel()}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -315,16 +371,28 @@ export function DocumentEditor({
                   <button
                     className="btn btn-secondary flex-1 sm:flex-none"
                     onClick={() => void save()}
-                    disabled={busyAction}
+                    disabled={busyAction || isSaving || !dirty}
                   >
-                    Save
+                    {isSaving && !savingVersion ? (
+                      <>
+                        <Spinner /> Saving...
+                      </>
+                    ) : (
+                      "Save"
+                    )}
                   </button>
                   <button
                     className="btn btn-secondary flex-1 sm:flex-none"
                     onClick={() => void save({ createVersion: true })}
-                    disabled={busyAction}
+                    disabled={busyAction || isSaving}
                   >
-                    Save version
+                    {savingVersion ? (
+                      <>
+                        <Spinner /> Saving version...
+                      </>
+                    ) : (
+                      "Save version"
+                    )}
                   </button>
                 </>
               )}
@@ -338,7 +406,7 @@ export function DocumentEditor({
                 <button
                   className="btn btn-danger flex-1 sm:flex-none"
                   onClick={() => setDeleteOpen(true)}
-                  disabled={busyAction}
+                  disabled={busyAction || isSaving}
                 >
                   Delete
                 </button>

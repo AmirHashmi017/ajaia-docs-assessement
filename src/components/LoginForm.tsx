@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "./Spinner";
 
 const DEMO_USERS = [
   { email: "alice@ajaia.dev", label: "Alice (owner)" },
@@ -15,6 +16,8 @@ export function LoginForm() {
   const [password, setPassword] = useState("password123");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const busy = loading || isPending;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -31,11 +34,12 @@ export function LoginForm() {
       if (!res.ok) {
         throw new Error(data.error || "Login failed");
       }
-      router.push("/dashboard");
-      router.refresh();
+      startTransition(() => {
+        router.push("/dashboard");
+        router.refresh();
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
       setLoading(false);
     }
   }
@@ -83,8 +87,14 @@ export function LoginForm() {
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-[var(--danger)]">{error}</p>
       )}
 
-      <button className="btn btn-primary w-full" type="submit" disabled={loading}>
-        {loading ? "Signing in..." : "Sign in"}
+      <button className="btn btn-primary w-full" type="submit" disabled={busy}>
+        {busy ? (
+          <>
+            <Spinner /> {isPending ? "Opening dashboard..." : "Signing in..."}
+          </>
+        ) : (
+          "Sign in"
+        )}
       </button>
 
       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] p-3">

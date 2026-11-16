@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { DocumentListItem, UserSummary } from "@/lib/types";
 import { UPLOAD_HELP } from "@/lib/constants";
+import { Spinner } from "./Spinner";
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, {
@@ -18,14 +18,20 @@ function formatDate(value: string) {
 function DocCard({
   doc,
   badge,
+  disabled,
+  onOpen,
 }: {
   doc: DocumentListItem;
   badge: string;
+  disabled?: boolean;
+  onOpen: (id: string, title: string) => void;
 }) {
   return (
-    <Link
-      href={`/documents/${doc.id}`}
-      className="block rounded-2xl border border-[var(--line)] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[var(--accent)]/30 hover:shadow-md active:scale-[0.99]"
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onOpen(doc.id, doc.title)}
+      className="block w-full rounded-2xl border border-[var(--line)] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[var(--accent)]/30 hover:shadow-md active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
     >
       <div className="flex items-start justify-between gap-3">
         <h3 className="min-w-0 flex-1 truncate font-semibold leading-snug">{doc.title}</h3>
@@ -36,7 +42,7 @@ function DocCard({
         <span className="mx-1 opacity-50">·</span>
         Updated {formatDate(doc.updatedAt)}
       </p>
-    </Link>
+    </button>
   );
 }
 
@@ -52,11 +58,25 @@ export function DashboardClient({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("Working...");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const blocked = busy || isPending;
+
+  function openDocument(id: string, title: string) {
+    setBusy(true);
+    setBusyLabel(`Opening “${title}”...`);
+    setError(null);
+    startTransition(() => {
+      router.push(`/documents/${id}`);
+    });
+  }
 
   async function createDocument() {
     setBusy(true);
+    setBusyLabel("Creating document...");
     setError(null);
     try {
       const res = await fetch("/api/documents", {
@@ -66,16 +86,19 @@ export function DashboardClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not create document");
-      router.push(`/documents/${data.document.id}`);
+      setBusyLabel("Opening document...");
+      startTransition(() => {
+        router.push(`/documents/${data.document.id}`);
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create document");
-    } finally {
       setBusy(false);
     }
   }
 
   async function onImport(file: File) {
     setBusy(true);
+    setBusyLabel(`Importing “${file.name}”...`);
     setError(null);
     setMessage(null);
     try {
@@ -85,17 +108,29 @@ export function DashboardClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
       setMessage(`Imported “${data.document.title}”. Opening editor...`);
-      router.push(`/documents/${data.document.id}`);
+      setBusyLabel(`Opening “${data.document.title}”...`);
+      startTransition(() => {
+        router.push(`/documents/${data.document.id}`);
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
-    } finally {
       setBusy(false);
+    } finally {
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:space-y-8 sm:px-4 sm:py-8 md:px-6">
+    <div className="relative mx-auto max-w-6xl space-y-6 px-3 py-5 sm:space-y-8 sm:px-4 sm:py-8 md:px-6">
+      {blocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(20,33,61,0.28)] px-4 backdrop-blur-[1px]">
+          <div className="flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-white px-5 py-4 shadow-xl">
+            <Spinner className="h-5 w-5 text-[var(--accent)]" />
+            <p className="text-sm font-medium">{busyLabel}</p>
+          </div>
+        </div>
+      )}
+
       <section className="panel p-4 sm:p-5 md:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -107,16 +142,28 @@ export function DashboardClient({
             <button
               className="btn btn-primary col-span-2 sm:col-auto"
               onClick={createDocument}
-              disabled={busy}
+              disabled={blocked}
             >
-              New document
+              {busy && busyLabel.startsWith("Creating") ? (
+                <>
+                  <Spinner /> Creating...
+                </>
+              ) : (
+                "New document"
+              )}
             </button>
             <button
               className="btn btn-secondary col-span-2 sm:col-auto"
               onClick={() => fileRef.current?.click()}
-              disabled={busy}
+              disabled={blocked}
             >
-              Import file
+              {busy && busyLabel.startsWith("Importing") ? (
+                <>
+                  <Spinner /> Importing...
+                </>
+              ) : (
+                "Import file"
+              )}
             </button>
             <input
               ref={fileRef}
@@ -137,7 +184,7 @@ export function DashboardClient({
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold sm:text-xl">Owned by you</h2>
-          <span className="badge bg-white border border-[var(--line)]">{owned.length}</span>
+          <span className="badge border border-[var(--line)] bg-white">{owned.length}</span>
         </div>
         {owned.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-[var(--line)] bg-white/60 p-5 text-sm text-[var(--ink-soft)] sm:p-6">
@@ -146,7 +193,13 @@ export function DashboardClient({
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {owned.map((doc) => (
-              <DocCard key={doc.id} doc={doc} badge="Owner" />
+              <DocCard
+                key={doc.id}
+                doc={doc}
+                badge="Owner"
+                disabled={blocked}
+                onOpen={openDocument}
+              />
             ))}
           </div>
         )}
@@ -155,7 +208,7 @@ export function DashboardClient({
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold sm:text-xl">Shared with you</h2>
-          <span className="badge bg-white border border-[var(--line)]">{shared.length}</span>
+          <span className="badge border border-[var(--line)] bg-white">{shared.length}</span>
         </div>
         {shared.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-[var(--line)] bg-white/60 p-5 text-sm text-[var(--ink-soft)] sm:p-6">
@@ -168,6 +221,8 @@ export function DashboardClient({
                 key={doc.id}
                 doc={doc}
                 badge={doc.access === "editor" ? "Editor" : "Viewer"}
+                disabled={blocked}
+                onOpen={openDocument}
               />
             ))}
           </div>
