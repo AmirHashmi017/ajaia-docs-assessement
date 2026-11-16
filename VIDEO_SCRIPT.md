@@ -20,7 +20,7 @@ Record with **Loom** (free) or YouTube unlisted. Keep it calm and demo-first.
 3. Rename title
 4. Apply bold / italic / underline / heading / list
 5. Pause to show autosave status
-> “Persistence is SQLite via Prisma locally. Formatting is TipTap HTML, so reopen preserves structure.”
+> “Persistence is MongoDB Atlas via Prisma. Formatting is TipTap HTML, so reopen preserves structure.”
 
 ### 1:20–2:20 — Sharing model
 1. Show Owned vs Shared on dashboard

@@ -7,6 +7,20 @@ import { handleRouteError, jsonError, jsonOk } from "@/lib/api";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
+async function persistSourceFile(fileName: string, buffer: Buffer) {
+  const safeName = `${Date.now()}-${fileName.replace(/[^\w.\-]+/g, "_")}`;
+
+  // Vercel serverless FS is read-only except /tmp. Import content already lives in MongoDB.
+  if (process.env.VERCEL) {
+    return `ephemeral/${safeName}`;
+  }
+
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  await mkdir(uploadsDir, { recursive: true });
+  await writeFile(path.join(uploadsDir, safeName), buffer);
+  return `uploads/${safeName}`;
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
@@ -28,12 +42,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const html = await fileToHtml(file.name, buffer);
     const title = file.name.replace(/\.[^.]+$/, "") || "Imported document";
-
-    const uploadsDir = path.join(process.cwd(), "uploads");
-    await mkdir(uploadsDir, { recursive: true });
-    const storedName = `${Date.now()}-${file.name.replace(/[^\w.\-]+/g, "_")}`;
-    const storagePath = path.join(uploadsDir, storedName);
-    await writeFile(storagePath, buffer);
+    const storagePath = await persistSourceFile(file.name, buffer);
 
     const document = await prisma.document.create({
       data: {
@@ -52,7 +61,7 @@ export async function POST(request: Request) {
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
             sizeBytes: file.size,
-            storagePath: `uploads/${storedName}`,
+            storagePath,
           },
         },
       },

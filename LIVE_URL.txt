@@ -1,5 +1,4 @@
-REPLACE_WITH_YOUR_VERCEL_URL
-# Example: https://ajaia-collab-docs.vercel.app
+https://ajaia-docs-three-jet.vercel.app/
 
 Demo accounts (password for all: password123)
 - alice@ajaia.dev
